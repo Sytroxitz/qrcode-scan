@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<title>QR / Barcode Scanner</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    width: 100%; height: 100%;
+    background: #000; color: #fff;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    overflow: hidden;
+    -webkit-user-select: none; user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #stage {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: #000;
+  }
+  #video {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    background: #000;
+  }
+  #overlay {
+    position: fixed; inset: 0;
+    pointer-events: none;
+  }
+  /* pointer-events become active while in "multi" selection mode */
+  #overlay.pickable { pointer-events: auto; }
+
+  #toolbar {
+    position: fixed;
+    top: env(safe-area-inset-top, 0);
+    left: 0; right: 0;
+    padding: 12px 14px;
+    display: flex; gap: 8px; align-items: center;
+    background: linear-gradient(to bottom, rgba(0,0,0,.55), rgba(0,0,0,0));
+    z-index: 10;
+  }
+  #toolbar button {
+    background: rgba(255,255,255,.12);
+    border: 1px solid rgba(255,255,255,.25);
+    color: #fff; padding: 8px 12px; border-radius: 999px;
+    font-size: 14px; cursor: pointer;
+  }
+  #status {
+    margin-left: auto;
+    font-size: 12px; opacity: .8;
+  }
+
+  #hint {
+    position: fixed;
+    bottom: calc(env(safe-area-inset-bottom, 0) + 16px);
+    left: 50%; transform: translateX(-50%);
+    background: rgba(0,0,0,.55);
+    padding: 8px 14px; border-radius: 999px;
+    font-size: 13px;
+    z-index: 10;
+    max-width: 90%;
+    text-align: center;
+  }
+
+  #panel {
+    position: fixed;
+    left: 0; right: 0;
+    bottom: 0;
+    padding: 12px 14px calc(env(safe-area-inset-bottom, 0) + 12px);
+    background: linear-gradient(to top, rgba(0,0,0,.78) 60%, rgba(0,0,0,0));
+    z-index: 15;
+    pointer-events: auto;
+    max-height: 55vh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  #panel .card {
+    background: rgba(20,20,22,.92);
+    border: 1px solid rgba(255,255,255,.08);
+    border-radius: 12px;
+    padding: 10px 12px;
+    margin-top: 8px;
+    word-break: break-all;
+  }
+  #panel .card.selected {
+    border-color: #2f7cff;
+    background: rgba(47,124,255,.18);
+  }
+  #panel .head {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 11px;
+    opacity: .7;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+  }
+  #panel .head .count {
+    background: rgba(255,255,255,.12);
+    padding: 1px 7px; border-radius: 999px;
+    font-size: 11px;
+  }
+  #panel .clear {
+    margin-left: auto;
+    background: rgba(255,255,255,.1);
+    border: 0; color: #fff;
+    padding: 4px 10px; border-radius: 999px;
+    font-size: 12px; cursor: pointer;
+  }
+  #panel .value { font-size: 15px; line-height: 1.35; margin-top: 4px; }
+  #panel .item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 10px; margin-top: 6px;
+    background: rgba(255,255,255,.06);
+    border: 1px solid rgba(255,255,255,.08);
+    border-radius: 10px;
+  }
+  #panel .item .idx {
+    flex: 0 0 26px; height: 26px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: #ffb020; color: #000;
+    border-radius: 50%;
+    font-size: 12px; font-weight: 700;
+  }
+  #panel .item .txt { flex: 1; font-size: 14px; }
+  #panel .empty { font-size: 13px; opacity: .55; padding: 4px 2px; }
+
+  #fatal {
+    position: fixed; inset: 0;
+    display: none;
+    align-items: center; justify-content: center;
+    padding: 24px; text-align: center;
+    background: #000; z-index: 30;
+  }
+  #fatal.show { display: flex; }
+</style>
+</head>
+<body>
+  <div id="stage">
+    <video id="video" autoplay playsinline muted></video>
+  </div>
+
+  <canvas id="overlay"></canvas>
+
+  <div id="toolbar">
+    <span id="status">Initialisiere…</span>
+  </div>
+
+  <div id="hint">Codes ins Bild halten</div>
+
+  <div id="panel">
+    <div id="selectedCard" class="card selected" style="display:none">
+      <div class="head">
+        <span>Ausgewählt</span>
+        <button class="clear" id="clearSelected" type="button">Zurücksetzen</button>
+      </div>
+      <div class="value" id="selectedValue">—</div>
+    </div>
+
+    <div class="card" id="liveCard">
+      <div class="head">
+        <span>Aktuell im Bild</span>
+        <span class="count" id="liveCount">0</span>
+      </div>
+      <div id="liveList">
+        <div class="empty">Keine Codes erkannt</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="fatal"><div id="fatalMsg"></div></div>
+
+  <!-- ZXing fallback is only loaded if the browser has no native BarcodeDetector -->
+  <script>
+    if (!('BarcodeDetector' in window))
+    {
+      const zxingScript = document.createElement('script');
+      zxingScript.src = 'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js';
+      zxingScript.async = false;
+      document.head.appendChild(zxingScript);
+    }
+  </script>
+  <script src="scanner.js" defer></script>
+</body>
+</html>
