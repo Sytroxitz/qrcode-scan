@@ -46,19 +46,19 @@ EAN-13, EAN-8, UPC-A, UPC-E, ITF
 Clone the repository into a web server directory, for example under XAMPP:
 
 ```bash
-git clone https://github.com/Sytroxitz/qrcode-scan-test.git
+git clone https://github.com/Sytroxitz/qrcode-scan.git
 ```
 
 Copy the files into a folder served by your web server and open it via HTTPS:
 
 ```
-https://localhost/qrcode-scan-test/
+https://localhost/qrcode-scan/
 ```
 
 From a phone on the same network, use the host PC's IP:
 
 ```
-https://<pc-ip>/qrcode-scan-test/
+https://<pc-ip>/qrcode-scan/
 ```
 
 On the first visit you will be asked to accept the self-signed certificate
